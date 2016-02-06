@@ -1,0 +1,391 @@
+#!/bin/csh -f
+
+####################################################################################
+## Copyright (c) 2015 ; The University of British Columbia ; All rights reserved. ##
+##                                                                                ##
+## Redistribution  and  use  in  source   and  binary  forms,   with  or  without ##
+## modification,  are permitted  provided that  the following conditions are met: ##
+##   * Redistributions   of  source   code  must  retain   the   above  copyright ##
+##     notice,  this   list   of   conditions   and   the  following  disclaimer. ##
+##   * Redistributions  in  binary  form  must  reproduce  the  above   copyright ##
+##     notice, this  list  of  conditions  and the  following  disclaimer in  the ##
+##     documentation and/or  other  materials  provided  with  the  distribution. ##
+##   * Neither the name of the University of British Columbia (UBC) nor the names ##
+##     of   its   contributors  may  be  used  to  endorse  or   promote products ##
+##     derived from  this  software without  specific  prior  written permission. ##
+##                                                                                ##
+## THIS  SOFTWARE IS  PROVIDED  BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" ##
+## AND  ANY EXPRESS  OR IMPLIED WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE ##
+## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE ##
+## DISCLAIMED.  IN NO  EVENT SHALL University of British Columbia (UBC) BE LIABLE ##
+## FOR ANY DIRECT,  INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY, OR CONSEQUENTIAL ##
+## DAMAGES  (INCLUDING,  BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE GOODS OR ##
+## SERVICES;  LOSS OF USE,  DATA,  OR PROFITS;  OR BUSINESS INTERRUPTION) HOWEVER ##
+## CAUSED AND ON ANY THEORY OF LIABILITY,  WHETHER IN CONTRACT, STRICT LIABILITY, ##
+## OR TORT  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE ##
+## OF  THIS SOFTWARE,  EVEN  IF  ADVISED  OF  THE  POSSIBILITY  OF  SUCH  DAMAGE. ##
+####################################################################################
+
+####################################################################################
+##                   Priority Encoder Match Recursive Generator                   ##
+##                                                                                ##
+##   Author: Ameer M.S. Abdelhadi (ameer@ece.ubc.ca; ameer.abdelhadi@gmail.com)   ##
+##   BRAM-based II-TCAM ; The University of British Columbia (UBC) ;  Dec. 2015   ##
+####################################################################################
+
+####################################################################################
+## USAGE:                                                                         ##
+## ./pem <top module suffex> <encoder width> [-cmd='combinatorial max depth'] \   ##
+##       [-mux='CASE, IFELSE, or AS5EXT'] [-ri] [-ro]                             ##
+##                                                                                ##
+## - arguments surrounded by angle brackets '<>' are mandatory, while  arguments  ##
+##   surrouned by square brackets are optional.                                   ##
+## - Mandatory arguments:                                                         ##
+##   * Top module name and file will be "lpm_<top module suffex>"                 ##
+##   * Encoder width is a positive integer                                        ##
+## - Optional arguments:                                                          ##
+##   * -ri : Register inputs  for pipelining                                      ##
+##   * -ro : Register outputs for pipelining                                      ##
+##   * -cmd: Combinatorial maximum depth; default is infinite,                    ##
+##          acheived by internal pipelining                                       ##
+##   * -mux: Mux type should be "CASE", "IFELSE" or "AS5EXT" (default is CASE)    ##
+##          > "CASE"  : standard binary 4->1 mux using case statement             ##
+##          > "IFELSE": using if/else statement                                   ##
+##          > "AS5EXT": Altera's StratixV extended ALM (7LUT)                     ##
+##                                                                                ##
+## EXAMPLES:                                                                      ##
+## ./pem 1024 cam -cmd=2 -mux=CASE -ri -ro                                        ##
+##     - Will generate Verilog files for a 1K wide priority encoder               ##
+##     - Registered inputs and outputs; maximum two stages deep logic             ##
+##     - Muxes are implemented using case statement                               ##
+##     - Top level name will be pem_cam and will be located in pem_cam.v          ##
+##                                                                                ##
+## The following files and directories will be created:                           ##
+## - pem_<top module suffex>.v: priority encoder top module file                  ##
+####################################################################################
+
+# text coloring and formatting
+set  RED  = '\x1b[1;31m' # red
+set  RST  = '\x1b[0m'    # reset formatting
+
+################################## ARGUMENTS CHECK #################################
+
+# require at least 2 arguments
+if (${#argv} < 2) then
+    printf "${RED}Error: At least 2 argument are required\n${RST}"
+    goto errorMessage
+endif
+
+# top module prefix/suffex
+set TMP = "pem"
+set TMS = ${argv[1]}
+
+# priority encoder width
+# check argument correctness (integer number greater than 2)
+if ( (`echo ${argv[2]} | egrep -c '^[0-9]+$'` != 1) || (${argv[2]} < 2) ) then
+  printf "${RED}Error (${argv[2]}): Priority encoder width must be an integer number greater than 2\n${RST}"
+  goto errorMessage
+endif
+@ PEW = ${argv[2]}
+
+# default optional argument values
+set CMD = 999999
+set MUX = "CASE"
+set RI  = 0
+set RO  = 0
+
+# optional arguments
+set i = 3
+while ($i <= ${#argv})
+  set ARG1 = `echo ${argv[$i]}|cut -d'=' -f1`
+  set ARG2 = `echo ${argv[$i]}|cut -d'=' -f2`
+  switch ($ARG1)
+    case "-[Cc][Mm][Dd]":
+      set CMD = ${ARG2}
+      breaksw
+    case "-[Mm][Uu][Xx]":
+      set MUX = ${ARG2}
+      breaksw
+    case "-[Rr][Ii]": # register inputs?
+      set RI = 1
+      breaksw
+    case "-[Rr][Oo]": # register outputs?
+      set RO = 1
+      breaksw      
+    default:
+      printf "${RED}Error (${ARG1}): wrong argument\n${RST}"
+      goto errorMessage
+      breaksw
+    endsw
+    @ i++
+end
+
+# check argument correctness of combinatorial maximum depth (positive integer number)
+if ((`echo ${CMD} | egrep -c '^[0-9]+$'` != 1) || (${CMD} < 1) ) then
+  printf "${RED}Error (${CMD}): Combinatorial maximum depth must be possitive integer number\n${RST}"
+  goto errorMessage
+endif
+
+# check argument correctness of mux implementation ("CASE", "IFELSE", "AS5EXT")
+if ( (${MUX} != "CASE") && (${MUX} != "IFELSE") && (${MUX} != "AS5EXT") ) then
+  printf "${RED}Error (${MUX}): Mux type should be CASE, IFELSE, or AS5EXT\n${RST}"
+  goto errorMessage
+endif
+
+################################## ARGUMENTS CHECK #################################
+
+# upper(log2(width))
+@ j = 2
+@ l2w = 1
+while ($j < $PEW)
+  @ j = $j * 2
+  @ l2w++
+end
+
+# wide recursive priority encoder based on narrower priority encoder
+printf "" >! ${TMP}_${TMS}.v
+
+# print header
+cat >> ${TMP}_${TMS}.v << EOV
+////////////////////////////////////////////////////////////////////////////////////
+// Copyright (c) 2015 ; The University of British Columbia ; All rights reserved. //
+//                                                                                //
+// Redistribution  and  use  in  source   and  binary  forms,   with  or  without //
+// modification,  are permitted  provided that  the following conditions are met: //
+//   * Redistributions   of  source   code  must  retain   the   above  copyright //
+//     notice,  this   list   of   conditions   and   the  following  disclaimer. //
+//   * Redistributions  in  binary  form  must  reproduce  the  above   copyright //
+//     notice, this  list  of  conditions  and the  following  disclaimer in  the //
+//     documentation and/or  other  materials  provided  with  the  distribution. //
+//   * Neither the name of the University of British Columbia (UBC) nor the names //
+//     of   its   contributors  may  be  used  to  endorse  or   promote products //
+//     derived from  this  software without  specific  prior  written permission. //
+//                                                                                //
+// THIS  SOFTWARE IS  PROVIDED  BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" //
+// AND  ANY EXPRESS  OR IMPLIED WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE //
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE //
+// DISCLAIMED.  IN NO  EVENT SHALL University of British Columbia (UBC) BE LIABLE //
+// FOR ANY DIRECT,  INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY, OR CONSEQUENTIAL //
+// DAMAGES  (INCLUDING,  BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE GOODS OR //
+// SERVICES;  LOSS OF USE,  DATA,  OR PROFITS;  OR BUSINESS INTERRUPTION) HOWEVER //
+// CAUSED AND ON ANY THEORY OF LIABILITY,  WHETHER IN CONTRACT, STRICT LIABILITY, //
+// OR TORT  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE //
+// OF  THIS SOFTWARE,  EVEN  IF  ADVISED  OF  THE  POSSIBILITY  OF  SUCH  DAMAGE. //
+////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////
+//    pem_${TMS}: Recursive priority encoder match (PEM); Automatically generated   //
+//                                                                                //
+//   Author: Ameer M.S. Abdelhadi (ameer@ece.ubc.ca; ameer.abdelhadi@gmail.com)   //
+//   BRAM-based II-TCAM ; The University of British Columbia (UBC) ;  Dec. 2015   //
+////////////////////////////////////////////////////////////////////////////////////
+
+EOV
+
+@ i = 1
+@ l2i = 0
+@ l4i = 0
+while ($i < $PEW)
+  @ ip  = $i
+  @ i   = $i   * 4
+  @ l2i = $l2i + 2
+  @ l4i = $l4i + 1
+
+  ##### Verilog - begin #####
+  echo "// pem${i}_${TMS}: ${i}-bit priority encoder match sub-module; Automatically generated"              >> ${TMP}_${TMS}.v
+  echo "module pem${i}_${TMS}(input clk, input rst, input [$i-1:0] oht, output [$l2i-1:0] bin, output vld);" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####   
+  if ($i == 4) then
+    ##### Verilog - begin #####
+    echo "  assign {bin,vld} = {\!(oht[0]||oht[1]),\!oht[0]&&(oht[1]||\!oht[2]),|oht};" >> ${TMP}_${TMS}.v
+    ##### Verilog - end   #####
+  else
+    ##### Verilog - begin #####
+    echo "  // recursive calls for four narrower (fourth the inout width) priority encoders"              >> ${TMP}_${TMS}.v
+    echo "  wire [$l2i-3:0] binI[3:0];"                                                                   >> ${TMP}_${TMS}.v
+    echo "  wire [   3:0] vldI     ;"                                                                     >> ${TMP}_${TMS}.v
+    echo "  pem${ip}_${TMS} pem${ip}_${TMS}_in0(clk, rst, oht[  $i/4-1:0        ],binI[0],vldI[0]);"      >> ${TMP}_${TMS}.v
+    echo "  pem${ip}_${TMS} pem${ip}_${TMS}_in1(clk, rst, oht[  $i/2-1:  $i/4 ],binI[1],vldI[1]);"        >> ${TMP}_${TMS}.v
+    echo "  pem${ip}_${TMS} pem${ip}_${TMS}_in2(clk, rst, oht[3*$i/4-1:  $i/2 ],binI[2],vldI[2]);"        >> ${TMP}_${TMS}.v
+    echo "  pem${ip}_${TMS} pem${ip}_${TMS}_in3(clk, rst, oht[  $i  -1:3*$i/4 ],binI[3],vldI[3]);"        >> ${TMP}_${TMS}.v
+    echo "  // register input priority encoders outputs if pipelining is required; otherwise assign only" >> ${TMP}_${TMS}.v
+    echo "  wire [$l2i-3:0] binII[3:0];"                                                                  >> ${TMP}_${TMS}.v
+    echo "  wire [   3:0] vldII     ;"                                                                    >> ${TMP}_${TMS}.v
+    ##### Verilog - end   #####  
+    if ( ( ( $l4i - 1 ) % $CMD ) == 0 ) then
+      ##### Verilog - begin #####
+      echo "  reg  [$l2i-3:0] binIR[3:0];"                                                                        >> ${TMP}_${TMS}.v
+      echo "  reg  [   3:0] vldIR     ;"                                                                          >> ${TMP}_${TMS}.v
+      echo "  always @(posedge clk, posedge rst)"                                                                 >> ${TMP}_${TMS}.v
+      echo "    if (rst) {binIR[3],binIR[2],binIR[1],binIR[0],vldIR} <= {(4*($l2i-1)){1'b0}};"                    >> ${TMP}_${TMS}.v
+      echo "    else     {binIR[3],binIR[2],binIR[1],binIR[0],vldIR} <= {binI[3],binI[2],binI[1],binI[0],vldI};"  >> ${TMP}_${TMS}.v
+      echo "  assign {binII[3],binII[2],binII[1],binII[0],vldII} = {binIR[3],binIR[2],binIR[1],binIR[0],vldIR};"  >> ${TMP}_${TMS}.v
+      ##### Verilog - end   #####
+    else
+      ##### Verilog - begin #####
+      echo "  assign {binII[3],binII[2],binII[1],binII[0],vldII} = {binI[3],binI[2],binI[1],binI[0],vldI};" >> ${TMP}_${TMS}.v
+      ##### Verilog - end   #####
+    endif
+    ##### Verilog - begin #####
+    echo "  // output pem4 to generate indices from valid bits"                  >> ${TMP}_${TMS}.v
+    echo "  pem4_${TMS} pem4_${TMS}_out0(clk,rst,vldII,bin[$l2i-1:$l2i-2],vld);" >> ${TMP}_${TMS}.v
+    ##### Verilog - end   #####
+    if ($MUX == "AS5EXT") then
+      ##### Verilog - begin #####
+      echo "  // generate stratixv_lcell_comb for extended 7LUT to implement the mux" >> ${TMP}_${TMS}.v
+      echo "  wire [$l2i-3:0] binO;"                                                  >> ${TMP}_${TMS}.v
+      echo "  genvar gi;"                                                             >> ${TMP}_${TMS}.v
+      echo "  generate"                                                               >> ${TMP}_${TMS}.v
+      echo "    for (gi=0 ; gi<($l2i-2) ; gi=gi+1) begin: LUTgi"                      >> ${TMP}_${TMS}.v
+      echo "      stratixv_lcell_comb #("                                             >> ${TMP}_${TMS}.v
+      echo "        .lut_mask    (64'hF0F0FF00F0F0CACA),"                             >> ${TMP}_${TMS}.v
+      echo "        .shared_arith("off"               ),"                             >> ${TMP}_${TMS}.v
+      echo "        .extended_lut("on"                ),"                             >> ${TMP}_${TMS}.v
+      echo "        .dont_touch  ("off"               )"                              >> ${TMP}_${TMS}.v
+      echo "      )"                                                                  >> ${TMP}_${TMS}.v
+      echo "      stratixv_lcell_ext_mux_inst ("                                      >> ${TMP}_${TMS}.v
+      echo "        .dataa       (binII[3][gi]        ),"                             >> ${TMP}_${TMS}.v
+      echo "        .datab       (binII[2][gi]        ),"                             >> ${TMP}_${TMS}.v
+      echo "        .datac       (vldII[2]            ),"                             >> ${TMP}_${TMS}.v
+      echo "        .datad       (binII[1][gi]        ),"                             >> ${TMP}_${TMS}.v
+      echo "        .datae       (vldII[0]            ),"                             >> ${TMP}_${TMS}.v
+      echo "        .dataf       (vldII[1]            ),"                             >> ${TMP}_${TMS}.v
+      echo "        .datag       (binII[0][gi]        ),"                             >> ${TMP}_${TMS}.v
+      echo "        .cin         (1'b0                ),"                             >> ${TMP}_${TMS}.v
+      echo "        .sharein     (1'b0                ),"                             >> ${TMP}_${TMS}.v
+      echo "        .combout     (binO[gi]            ),"                             >> ${TMP}_${TMS}.v
+      echo "        .sumout      (                    ),"                             >> ${TMP}_${TMS}.v
+      echo "        .cout        (                    ),"                             >> ${TMP}_${TMS}.v
+      echo "        .shareout    (                    )"                              >> ${TMP}_${TMS}.v
+      echo "      );"                                                                 >> ${TMP}_${TMS}.v
+      echo "    end"                                                                  >> ${TMP}_${TMS}.v
+      echo "  endgenerate"                                                            >> ${TMP}_${TMS}.v
+      ##### Verilog - end   #####
+    else if ($MUX == "IFELSE") then
+      ##### Verilog - begin #####
+      echo "  // implement the mux with a 7-inputs ALM in extended mode for each output" >> ${TMP}_${TMS}.v
+      echo "  reg [$l2i-3:0] binO;"                                                      >> ${TMP}_${TMS}.v
+      echo "  always @(*)"                                                               >> ${TMP}_${TMS}.v
+      echo "    if      (vldII[0]) binO = binII[0];"                                     >> ${TMP}_${TMS}.v
+      echo "    else if (vldII[1]) binO = binII[1];"                                     >> ${TMP}_${TMS}.v
+      echo "    else if (vldII[2]) binO = binII[2];"                                     >> ${TMP}_${TMS}.v
+      echo "    else               binO = binII[3];"                                     >> ${TMP}_${TMS}.v
+      ##### Verilog - end   #####
+    else
+      ##### Verilog - begin #####
+      echo "  // a 4->1 mux to steer indices from the narrower pe's" >> ${TMP}_${TMS}.v
+      echo "  reg [$l2i-3:0] binO;"                                  >> ${TMP}_${TMS}.v
+      echo "  always @(*)"                                           >> ${TMP}_${TMS}.v
+      echo "    case (bin[$l2i-1:$l2i-2])"                           >> ${TMP}_${TMS}.v
+      echo "      2'b00: binO = binII[0];"                           >> ${TMP}_${TMS}.v
+      echo "      2'b01: binO = binII[1];"                           >> ${TMP}_${TMS}.v
+      echo "      2'b10: binO = binII[2];"                           >> ${TMP}_${TMS}.v
+      echo "      2'b11: binO = binII[3];"                           >> ${TMP}_${TMS}.v
+      echo "  endcase"                                               >> ${TMP}_${TMS}.v
+      ##### Verilog - end   #####
+    endif
+    ##### Verilog - begin #####
+    echo "  assign bin[$l2i-3:0] = binO;" >> ${TMP}_${TMS}.v
+    ##### Verilog - end   #####
+  endif
+  ##### Verilog - begin #####
+  echo "endmodule" >> ${TMP}_${TMS}.v
+  echo             >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+end
+
+# priority encoder top module file
+
+##### Verilog - begin #####
+echo "// ${TMP}_${TMS}.v: priority encoder top module file; Automatically generated"                        >> ${TMP}_${TMS}.v
+echo "module ${TMP}_${TMS}(input clk, input rst, input [$PEW-1:0] oht, output [$l2w-1:0] bin, output vld);" >> ${TMP}_${TMS}.v
+##### Verilog - end   #####
+
+if ($RI == "1") then
+  ##### Verilog - begin #####
+  echo "  // register input (oht)"            >> ${TMP}_${TMS}.v
+  echo "  reg [$PEW-1:0] ohtR;"               >> ${TMP}_${TMS}.v
+  echo "  always @(posedge clk, posedge rst)" >> ${TMP}_${TMS}.v
+  echo "    if (rst) ohtR <= {$PEW{1'b0}};"   >> ${TMP}_${TMS}.v
+  echo "    else     ohtR <= oht;"            >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+else
+  ##### Verilog - begin #####
+  echo "  wire [$PEW-1:0] ohtR = oht;" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+endif
+
+##### Verilog - begin #####
+echo "  wire [$l2w-1:0] binII;"          >> ${TMP}_${TMS}.v
+echo "  wire          vldI ;"            >> ${TMP}_${TMS}.v
+echo "  // instantiate peiority encoder" >> ${TMP}_${TMS}.v
+##### Verilog - end   #####
+
+if ($i > $PEW) then
+  ##### Verilog - begin #####
+  echo "  wire [$i-1:0] ohtI = {{($i-$PEW){1'b0}},ohtR};"           >> ${TMP}_${TMS}.v
+  echo "  wire [$l2i-1:0] binI ;"                                   >> ${TMP}_${TMS}.v
+  echo "  pem${i}_${TMS} pem${i}_${TMS}_0(clk,rst,ohtI,binI,vldI);" >> ${TMP}_${TMS}.v
+  echo "  assign binII = binI[$l2w-1:0];"                           >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+else
+  ##### Verilog - begin #####
+  echo "  pem${i}_${TMS} pem${i}_${TMS}_0(clk,rst,ohtR,binII,vldI);" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+endif
+
+if ($RO == "1") then
+  ##### Verilog - begin #####
+  echo "  // register outputs (bin, vld)"                 >> ${TMP}_${TMS}.v
+  echo "  reg [$l2w-1:0] binIIR;"                         >> ${TMP}_${TMS}.v
+  echo "  reg          vldIR ;"                           >> ${TMP}_${TMS}.v
+  echo "  always @(posedge clk, posedge rst)"             >> ${TMP}_${TMS}.v
+  echo "    if (rst) {binIIR,vldIR} <= {($l2w+1){1'b0}};" >> ${TMP}_${TMS}.v
+  echo "    else     {binIIR,vldIR} <= {binII,vldI};"     >> ${TMP}_${TMS}.v
+  echo "  assign {bin,vld} = {binIIR,vldIR};"             >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+else
+  ##### Verilog - begin #####
+  echo "  assign {bin,vld} = {binII ,vldI };" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+endif
+
+##### Verilog - begin #####
+echo "endmodule" >> ${TMP}_${TMS}.v
+##### Verilog - end   #####
+
+goto scriptEnd
+
+################################## ERROR MESSAGE ####################################
+
+errorMessage:
+printf '\x1b[%i;3%im' 1 1
+cat << EOH
+USAGE:
+./pem <top module suffex> <encoder width> [-cmd='combinatorial max depth'] \
+      [-mux='CASE, IFELSE, or AS5EXT'] [-ri] [-ro]
+- arguments surrounded by angle brackets '<>' are mandatory, while  arguments
+  surrouned by square brackets are optional.
+- Mandatory arguments:
+  * Top module name and file will be "pem_<top module suffex>"
+  * Encoder width is a positive integer
+- Optional arguments:
+  * -ri : Register inputs  for pipelining
+  * -ro : Register outputs for pipelining
+  * -cmd: Combinatorial maximum depth; default is infinite,
+         acheived by internal pipelining
+  * -mux: Mux type should be "CASE", "IFELSE" or "AS5EXT" (default is CASE)
+         > "CASE"  : standard binary 4->1 mux using case statement
+         > "IFELSE": using if/else statement
+         > "AS5EXT": Altera's StratixV extended ALM (7LUT)
+EXAMPLES:
+./pem 1024 cam -cmd=2 -mux=CASE -ri -ro
+    - Will generate Verilog files for a 1K wide priority encoder
+    - Registered inputs and outputs; maximum two stages deep logic
+    - Muxes are implemented using case statement
+    - Top level name will be pem_cam and will be located in pem_cam.v
+The following files and directories will be created:
+- pem_<top module suffex>.v: priority encoder top module file
+EOH
+printf '\x1b[0m'
+scriptEnd:

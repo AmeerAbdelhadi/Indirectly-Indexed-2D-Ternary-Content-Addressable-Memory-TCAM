@@ -1,0 +1,225 @@
+####################################################################################
+## Copyright (c) 2015, University of British Columbia (UBC); All rights reserved. ##
+##                                                                                ##
+## Redistribution  and  use  in  source   and  binary  forms,   with  or  without ##
+## modification,  are permitted  provided that  the following conditions are met: ##
+##   * Redistributions   of  source   code  must  retain   the   above  copyright ##
+##     notice,  this   list   of   conditions   and   the  following  disclaimer. ##
+##   * Redistributions  in  binary  form  must  reproduce  the  above   copyright ##
+##     notice, this  list  of  conditions  and the  following  disclaimer in  the ##
+##     documentation and/or  other  materials  provided  with  the  distribution. ##
+##   * Neither the name of the University of British Columbia (UBC) nor the names ##
+##     of   its   contributors  may  be  used  to  endorse  or   promote products ##
+##     derived from  this  software without  specific  prior  written permission. ##
+##                                                                                ##
+## THIS  SOFTWARE IS  PROVIDED  BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" ##
+## AND  ANY EXPRESS  OR IMPLIED WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE ##
+## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE ##
+## DISCLAIMED.  IN NO  EVENT SHALL University of British Columbia (UBC) BE LIABLE ##
+## FOR ANY DIRECT,  INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY, OR CONSEQUENTIAL ##
+## DAMAGES  (INCLUDING,  BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE GOODS OR ##
+## SERVICES;  LOSS OF USE,  DATA,  OR PROFITS;  OR BUSINESS INTERRUPTION) HOWEVER ##
+## CAUSED AND ON ANY THEORY OF LIABILITY,  WHETHER IN CONTRACT, STRICT LIABILITY, ##
+## OR TORT  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE ##
+## OF  THIS SOFTWARE,  EVEN  IF  ADVISED  OF  THE  POSSIBILITY  OF  SUCH  DAMAGE. ##
+####################################################################################
+
+####################################################################################
+##                            Quartus II Settings File                            ##
+##                                                                                ##
+##   Author: Ameer M.S. Abdelhadi (ameer@ece.ubc.ca; ameer.abdelhadi@gmail.com)   ##
+##   BRAM-based II-TCAM ; The University of British Columbia (UBC) ;  Dec. 2015   ##
+####################################################################################
+
+# Family and device settings
+# use 5SGXMA7N1F45C1 for faster speed (less ALMs than 5SGXMABN1F45C2)
+# Assign ROUTER_TIMING_OPTIMIZATION_LEVEL to MAXIMUM if 5SGXMABN1F45C2 is used
+set_global_assignment -name FAMILY "Stratix V"
+set_global_assignment -name DEVICE 5SGXMABN1F45C2
+
+# The name of the top-level design entity for this project.
+# This name is case sensitive and must exactly match the entity name in the design file
+set_global_assignment -name TOP_LEVEL_ENTITY iitcam
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION 15.1
+set_global_assignment -name PROJECT_CREATION_TIME_DATE "07:12:48  December 21, 2015"
+set_global_assignment -name LAST_QUARTUS_VERSION 15.1.0
+
+# design files to be included in this project
+set_global_assignment -name VERILOG_INCLUDE_FILE utils.vh
+set_global_assignment -name VERILOG_INCLUDE_FILE config.vh
+set_global_assignment -name VERILOG_FILE bcam_reg.v
+set_global_assignment -name VERILOG_FILE iitcam9b.v
+set_global_assignment -name VERILOG_FILE iitcam.v
+set_global_assignment -name VERILOG_FILE iitram9bx1k.v
+set_global_assignment -name VERILOG_FILE lpm_out.v
+set_global_assignment -name VERILOG_FILE prefreg.v
+set_global_assignment -name VERILOG_FILE camctl.v
+set_global_assignment -name VERILOG_FILE dpmlab.v
+set_global_assignment -name VERILOG_FILE iitram9b.v
+set_global_assignment -name VERILOG_FILE mwm20k.v
+set_global_assignment -name VERILOG_FILE pem_out.v
+set_global_assignment -name VERILOG_FILE setram.v
+
+set_global_assignment -name SDC_FILE iitcam.sdc
+
+# Operating temperature conditions
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
+
+# The Quartus II software uses the ERROR_CHECK_FREQUENCY_DIVISOR value in the CRC block in the compilation.
+# Make sure the ERROR_CHECK_FREQUENCY_DIVISOR value in the CRC block and the in the QSF have the same value.
+set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 256
+
+# EDA tools used with the Quartus II software to develop your project
+set_global_assignment -name EDA_SIMULATION_TOOL "ModelSim-Altera (Verilog)"
+set_global_assignment -name EDA_OUTPUT_DATA_FORMAT "VERILOG HDL" -section_id eda_simulation
+
+#################################
+## Compilation Process Options ##
+#################################
+
+# Parallel compilation: use all available processors
+# Specifies the maximum number of processors allocated for parallel compilation on a single machine.
+# For parallel compilation you can use all available processors on your machine, or specify the number of processors you want to use.
+# For example, if you have a quad-core processor machine and want to leave one processor free for other tasks, you specify '3' as the setting of this option.
+# A setting of '1' disables parallel compilation.
+set_global_assignment -name NUM_PARALLEL_PROCESSORS ALL
+
+# Use smart compilation to help future compilations run faster
+set_global_assignment -name SMART_RECOMPILE ON
+
+# Allows the RTL Viewer to process the schematic during design compilation.
+# Allows to open the RTL Viewer after the Analysis & Synthesis portion of design compilation completes, rather than waiting for the full compilation to complete.
+set_global_assignment -name FLOW_ENABLE_RTL_VIEWER ON
+
+# Directs the TimeQuest Timing Analyzer to perform multicorner timing analysis, which analyzes the design against best-case and worst-case operating conditions.
+set_global_assignment -name TIMEQUEST_MULTICORNER_ANALYSIS ON
+
+# Specifies the directory in which to save all project output files such as the Text-Format Report Files (.rpt) and Equation Files (.eqn).
+# By default, all project output files are saved in the project directory.
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+
+#####################################
+## Physical Synthesis Optimization ##
+#####################################
+
+## Optimization for performance
+
+# Perform physical synthesis optimizations on combinational logic during synthesis and fitting to increase circuit performance.
+# >>> Run-time increases if enabled
+set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
+
+# Allows register retiming, during synthesis and fitting to increase circuit performance.
+# >>> Registers consumption may increase due to retiming
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
+
+# Effort level: FAST, NORMAL, or EXTRA.
+# Specifies the amount of effort, in terms of compile time, physical synthesis should use.
+# Compared to the Default setting, a setting of Extra will use extra compile time to try to gain extra circuit performance.
+# Conversely, a setting of Fast will use less compile time but may reduce the performance gain that physical synthesis is able to achieve.
+set_global_assignment -name PHYSICAL_SYNTHESIS_EFFORT EXTRA
+
+## Fitter netlist optimization
+
+# Specifies that Quartus II should perform automatic insertion of pipeline stages for asynchronous clear and asynchronous load signals during fitting to increase circuit performance.
+# This option is useful for asynchronous signals that are failing recovery and removal timing because they feed registers using a high-speed clock.
+set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING ON
+
+# Specifies that the Fitter should perform physical synthesis optimizations on registers, specifically allowing register duplication, during fitting to increase circuit performance.
+# >>> Registers consumption increases, check if affects retiming
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
+
+
+## optimization for fitting
+
+# Specifies that the Fitter should perform physical synthesis optimizations on combinational logic during fitting to achieve a fit.
+set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC_FOR_AREA ON
+
+###################################
+## Analysis & Synthesis Settings ##
+###################################
+
+# Optimization Technique: SPEED, BALANCED, or AREA
+# Specifies the overall optimization goal for Analysis & Synthesis: attempt to maximize performance, minimize logic usage, or balance high performance with minimal logic usage.
+set_global_assignment -name OPTIMIZATION_TECHNIQUE SPEED
+
+# Allows synthesis to use timing information during synthesis to better optimize the design.
+set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS ON
+
+# Iteration limit for constant Verilog loops (e.g. for loops)
+# Defines the iteration limit for Verilog loops with loop conditions that evaluate to compile-time constants on each loop iteration.
+# This limit exists primarily to identify potential infinite loops before they exhaust memory or trap the software in an actual infinite loop.
+set_global_assignment -name VERILOG_CONSTANT_LOOP_LIMIT 1048576
+
+# Iteration limit for non-constant Verilog loops (e.g. while loops)
+# Defines the iteration limit for Verilog loops with loop conditions that do not evaluate to compile-time constants on each loop iteration.
+# This limit exists primarily to identify potential infinite loops before they exhaust memory or trap the software in an actual infinite loop.
+set_global_assignment -name VERILOG_NON_CONSTANT_LOOP_LIMIT 1048576
+
+# Removes redundant LCELL primitives or WYSIWYG primitives.
+# Turning this option on optimizes a circuit for area and speed.
+# This option is ignored if it is applied to anything other than a design entity.
+set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON
+
+# Removes a register if it is identical to another register.
+# If two registers generate the same logic, the second one will be deleted and the first one will be made to fan out to the second one's destinations.
+# Also, if the deleted register has different logic option assignments, they will be ignored.
+# This option is useful if you wish to prevent the Compiler from removing duplicate registers that you have used deliberately. You can do this by setting the option to Off.
+# This option is ignored if it is applied to anything other than an individual register or a design entity containing registers.
+set_global_assignment -name REMOVE_DUPLICATE_REGISTERS ON
+
+#####################
+## Fitter Settings ##
+#####################
+
+# Allows the Fitter to optimize hold time by adding delay to the appropriate paths.
+# The Optimize Timing option must be turned on in order for this option to work.
+# If you are using the TimeQuest Timing Analyzer, and specify the I/O paths and Minimum tpd Paths setting, all assignments involving I/O pins are optimized.
+# Specifying the All Paths setting directs the Fitter to optimize the hold time of all paths.
+# Turning off this option directs the Fitter not to optimize the hold time of any paths.
+# Use: "ALL PATHS", "IO PATHS AND MINIMUM TPD PATHS", or OFF
+#set_global_assignment -name OPTIMIZE_HOLD_TIMING OFF
+
+# Controls whether the Fitter optimizes a design to meet timing requirements at all process corners and operating conditions.
+# The Optimize Timing logic option must be enabled for this option to work.
+# When this setting is turned off, designs are optimized to meet timing only at the slow timing process corner and operating condition.
+# When this option is turned on, designs are optimized to meet timing at all corners and operating conditions;
+# as a result, turning on this option helps create a design implementation that is more robust across process, temperature, and voltage variations.
+set_global_assignment -name OPTIMIZE_MULTI_CORNER_TIMING OFF
+
+# Controls the fitter's trade-off between performance and compilation speed.
+# Auto Fit adjusts the fitter optimization effort to minimize compilation time, while still achieving the design timing requirements.
+# The FITTER_AUTO_EFFORT_DESIRED_SLACK_MARGIN option can be used to request that Auto Fit apply sufficient optimization effort to achieve additional timing margin.
+# Standard Fit will use maximum effort regardless of the design's requirements, leading to higher compilation time and more margin on easier designs.
+# For difficult designs, Auto Fit and Standard Fit will both use maximum effort.
+# Fast Fit will decrease optimization effort to reduce compilation time, which may degrade design performance.
+#set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+
+# Router timing optimization level: MAXIMUM, MINIMUM, or NORMAL (default)
+# Controls how aggressively the router tries to meet timing requirements.
+# Setting this option to Maximum can increase design speed slightly, at the cost of increased compile time.
+# Setting this option to Minimum can reduce compile time, at the cost of slightly reduced design speed.
+set_global_assignment -name ROUTER_TIMING_OPTIMIZATION_LEVEL MAXIMUM
+
+# Specifies whether the Fitter performs final placement optimizations. Performing final placement
+# optimizations may improve timing and routability, but may also require longer compilation time.
+# The default setting of Automatically can be used with the Auto Fit Fitter Effort Level (also
+# the default) to let the fitter decide whether these optimizations should run based on the
+# routability and timing requirements of the design. Values: 'ALWAYS', 'AUTOMATICALLY', 'NEVER'.
+set_global_assignment -name FINAL_PLACEMENT_OPTIMIZATION ALWAYS
+
+# Controls whether the fitter optimizes to meet the user's maximum delay timing requirements
+# (eg. clock cycle time, Tsu, Tco) during ECO compiles. By default, this option is set to off.
+# Turning it on can improve timing performance at the cost of compilation time.
+set_global_assignment -name ECO_OPTIMIZE_TIMING ON
+
+###############################
+## TimeQuest Timing Analyzer ##
+###############################
+
+# Directs the TimeQuest Timing Analyzer to report the worst-case path per clock domain and analysis.
+set_global_assignment -name TIMEQUEST_DO_REPORT_TIMING ON
+
+# Directs the TimeQuest Timing Analyzer to remove common clock path pessimism (CCPP) during slack computation.
+set_global_assignment -name TIMEQUEST_DO_CCPP_REMOVAL OFF
+

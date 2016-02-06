@@ -1,0 +1,327 @@
+#!/bin/csh -f
+
+####################################################################################
+## Copyright (c) 2015 ; The University of British Columbia ; All rights reserved. ##
+##                                                                                ##
+## Redistribution  and  use  in  source   and  binary  forms,   with  or  without ##
+## modification,  are permitted  provided that  the following conditions are met: ##
+##   * Redistributions   of  source   code  must  retain   the   above  copyright ##
+##     notice,  this   list   of   conditions   and   the  following  disclaimer. ##
+##   * Redistributions  in  binary  form  must  reproduce  the  above   copyright ##
+##     notice, this  list  of  conditions  and the  following  disclaimer in  the ##
+##     documentation and/or  other  materials  provided  with  the  distribution. ##
+##   * Neither the name of the University of British Columbia (UBC) nor the names ##
+##     of   its   contributors  may  be  used  to  endorse  or   promote products ##
+##     derived from  this  software without  specific  prior  written permission. ##
+##                                                                                ##
+## THIS  SOFTWARE IS  PROVIDED  BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" ##
+## AND  ANY EXPRESS  OR IMPLIED WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE ##
+## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE ##
+## DISCLAIMED.  IN NO  EVENT SHALL University of British Columbia (UBC) BE LIABLE ##
+## FOR ANY DIRECT,  INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY, OR CONSEQUENTIAL ##
+## DAMAGES  (INCLUDING,  BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE GOODS OR ##
+## SERVICES;  LOSS OF USE,  DATA,  OR PROFITS;  OR BUSINESS INTERRUPTION) HOWEVER ##
+## CAUSED AND ON ANY THEORY OF LIABILITY,  WHETHER IN CONTRACT, STRICT LIABILITY, ##
+## OR TORT  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE ##
+## OF  THIS SOFTWARE,  EVEN  IF  ADVISED  OF  THE  POSSIBILITY  OF  SUCH  DAMAGE. ##
+####################################################################################
+
+####################################################################################
+##                 Longest-Prefix-Macth (LPM) Recursive Generator                 ##
+##                                                                                ##
+## Basic unit compares two prefixes, hence depth is O(log2(width)).               ##
+## Basic unit is implemented by prefix comparison, while taking in account        ##
+## validity of each prefix.                                                       ##
+##                                                                                ##
+##   Author: Ameer M.S. Abdelhadi (ameer@ece.ubc.ca; ameer.abdelhadi@gmail.com)   ##
+##   BRAM-based II-TCAM ; The University of British Columbia (UBC) ;  Dec. 2015   ##
+####################################################################################
+
+####################################################################################
+## USAGE:                                                                         ##
+## ./lpm <top module suffex> <encoder width> <prefix width>  \                    ##
+##   [-cmd='combinatorial max depth'] [-ri] [-ro]                                 ##
+##                                                                                ##
+## - arguments surrounded by angle brackets '<>' are mandatory, while  arguments  ##
+##   surrouned by square brackets are optional.                                   ##
+## - Mandatory arguments:                                                         ##
+##   * Top module name and file will be "lpm_<top module suffex>"                 ##
+##   * Encoder width is a positive integer                                        ##
+##   * Prefix width is a positive integer                                         ##
+## - Optional arguments:                                                          ##
+##   * -ri : Register inputs  for pipelining                                      ##
+##   * -ro : Register outputs for pipelining                                      ##
+##   * -cmd: Combinatorial maximum depth; default is infinite,                    ##
+##          acheived by internal pipelining                                       ##
+##                                                                                ##
+## EXAMPLES:                                                                      ##
+## ./lpm out 1024 5 -cmd=2 -ri -ro                                                ##
+##     - generates Verilog for a 1K longest-prefix-match encoder with 5-bit prefix##
+##     - Registered inputs and outputs; maximum two stages deep logic             ##
+##     - Top level name will be lpm_out and will be located in lpm_out.v          ##
+##                                                                                ##
+## The following files and directories will be created:                           ##
+## - lpm_<top module suffex>.v:  Longest-Prefix-Macth (LPM) top module file       ##
+####################################################################################
+
+# text coloring and formatting
+set  RED  = '\x1b[1;31m' # red
+set  RST  = '\x1b[0m'    # reset formatting
+
+################################## ARGUMENTS CHECK #################################
+
+# require at least 2 arguments
+if (${#argv} < 3) then
+    printf "${RED}Error: At least 2 argument are required\n${RST}"
+    goto errorMessage
+endif
+
+# top module prefix/suffex
+set TMP = "lpm"
+set TMS = ${argv[1]}
+
+# LPM width
+# check argument correctness (integer number greater than 2)
+if ( (`echo ${argv[2]} | egrep -c '^[0-9]+$'` != 1) || (${argv[2]} < 2) ) then
+  printf "${RED}Error (${argv[2]}): LPM encoder width must be an integer greater than 2\n${RST}"
+  goto errorMessage
+endif
+@ PEW = ${argv[2]}
+
+# prefix width
+# check argument correctness (positive integer)
+if ( (`echo ${argv[3]} | egrep -c '^[0-9]+$'` != 1) || (${argv[3]} < 1) ) then
+  printf "${RED}Error (${argv[3]}): Prefix width must be a positive integer\n${RST}"
+  goto errorMessage
+endif
+@ PRW = ${argv[3]}
+
+# default optional argument values
+set CMD = 999999
+set RI  = 0
+set RO  = 0
+
+# optional arguments
+set i = 4
+while ($i <= ${#argv})
+  set ARG1 = `echo ${argv[$i]}|cut -d'=' -f1`
+  set ARG2 = `echo ${argv[$i]}|cut -d'=' -f2`
+  switch ($ARG1)
+    case "-[Cc][Mm][Dd]":
+      set CMD = ${ARG2}
+      breaksw
+    case "-[Rr][Ii]": # register inputs?
+      set RI = 1
+      breaksw
+    case "-[Rr][Oo]": # register outputs?
+      set RO = 1
+      breaksw      
+    default:
+      printf "${RED}Error (${ARG1}): wrong argument\n${RST}"
+      goto errorMessage
+      breaksw
+    endsw
+    @ i++
+end
+
+# check argument correctness of combinatorial maximum depth (positive integer number)
+if ((`echo ${CMD} | egrep -c '^[0-9]+$'` != 1) || (${CMD} < 1) ) then
+  printf "${RED}Error (${CMD}): Combinatorial maximum depth must be possitive integer number\n${RST}"
+  goto errorMessage
+endif
+
+################################## ARGUMENTS CHECK #################################
+
+# upper(log2(width))
+@ j = 2
+@ l2w = 1
+while ($j < $PEW)
+  @ j = $j * 2
+  @ l2w++
+end
+
+# wide recursive LPM encoder based on narrower LPM encoder
+printf "" >! ${TMP}_${TMS}.v
+
+# print header
+cat >> ${TMP}_${TMS}.v << EOV
+////////////////////////////////////////////////////////////////////////////////////
+// Copyright (c) 2015 ; The University of British Columbia ; All rights reserved. //
+//                                                                                //
+// Redistribution  and  use  in  source   and  binary  forms,   with  or  without //
+// modification,  are permitted  provided that  the following conditions are met: //
+//   * Redistributions   of  source   code  must  retain   the   above  copyright //
+//     notice,  this   list   of   conditions   and   the  following  disclaimer. //
+//   * Redistributions  in  binary  form  must  reproduce  the  above   copyright //
+//     notice, this  list  of  conditions  and the  following  disclaimer in  the //
+//     documentation and/or  other  materials  provided  with  the  distribution. //
+//   * Neither the name of the University of British Columbia (UBC) nor the names //
+//     of   its   contributors  may  be  used  to  endorse  or   promote products //
+//     derived from  this  software without  specific  prior  written permission. //
+//                                                                                //
+// THIS  SOFTWARE IS  PROVIDED  BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" //
+// AND  ANY EXPRESS  OR IMPLIED WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE //
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE //
+// DISCLAIMED.  IN NO  EVENT SHALL University of British Columbia (UBC) BE LIABLE //
+// FOR ANY DIRECT,  INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY, OR CONSEQUENTIAL //
+// DAMAGES  (INCLUDING,  BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE GOODS OR //
+// SERVICES;  LOSS OF USE,  DATA,  OR PROFITS;  OR BUSINESS INTERRUPTION) HOWEVER //
+// CAUSED AND ON ANY THEORY OF LIABILITY,  WHETHER IN CONTRACT, STRICT LIABILITY, //
+// OR TORT  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE //
+// OF  THIS SOFTWARE,  EVEN  IF  ADVISED  OF  THE  POSSIBILITY  OF  SUCH  DAMAGE. //
+////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////
+// lpm_${TMS}: Recursive Longest-Prefix-Macth (LPM) encoder; Automatically generated//
+//                                                                                //
+//   Author: Ameer M.S. Abdelhadi (ameer@ece.ubc.ca; ameer.abdelhadi@gmail.com)   //
+//   BRAM-based II-TCAM ; The University of British Columbia (UBC) ;  Dec. 2015   //
+////////////////////////////////////////////////////////////////////////////////////
+
+EOV
+
+@ i = 1
+@ l2i = 0
+while ($i < $PEW)
+  @ ip  = $i
+  @ i   = $i   * 2
+  @ l2i = $l2i + 1
+  
+  ##### Verilog - begin #####
+  echo "// lpm${i}_${TMS}: ${i}-bit  Longest-Prefix-Macth (LPM) sub-module; Automatically generated"                                                         >> ${TMP}_${TMS}.v
+  echo "module lpm${i}_${TMS}(input clk, input rst, input [$i-1:0] oht, input [$PRW*$i-1:0] prf, output [$l2i-1:0] bin, output [$PRW-1:0] pro, output vld);" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+  if ($i == 2) then
+    ##### Verilog - begin #####
+    echo "  wire [$PRW-1:0] p1,p0;  assign { p1,p0 } = prf; // unpacked input prefix"    >> ${TMP}_${TMS}.v
+    echo "  assign bin = ((p1<p0) || \!oht[0]) && oht[1]; // valid minimal prefix index"  >> ${TMP}_${TMS}.v
+    echo "  assign pro = bin ? p1 : p0                 ; // prefix out - valid minimum"          >> ${TMP}_${TMS}.v 
+    echo "  assign vld = |oht                          ; // valid out?"                        >> ${TMP}_${TMS}.v
+    ##### Verilog - end   #####
+  else
+    ##### Verilog - begin #####
+    echo "  // recursive calls for four narrower (half the inout width) LPM encoders"                                                >> ${TMP}_${TMS}.v
+    echo "  wire [$l2i-2:0] binI[1:0]; wire [1:0] vldI; wire [$PRW-1:0] proI [1:0];"                                                   >> ${TMP}_${TMS}.v
+    echo "  lpm${ip}_${TMS} lpm${ip}_${TMS}_in0(clk,rst,oht[$i/2-1:0    ],prf[$i/2*$PRW-1:0    ],binI[0],proI[0],vldI[0]);"    >> ${TMP}_${TMS}.v
+    echo "  lpm${ip}_${TMS} lpm${ip}_${TMS}_in1(clk,rst,oht[$i  -1:  $i/2],prf[$i  *$PRW-1:$i/2*$PRW],binI[1],proI[1],vldI[1]);" >> ${TMP}_${TMS}.v
+
+    echo "  // register input LPM encoders outputs if pipelining is required; otherwise assign only"                                   >> ${TMP}_${TMS}.v
+    echo "  wire [$l2i-2:0] binII[1:0]; wire [$PRW-1:0] proII[1:0]; wire [   1:0] vldII;"                                              >> ${TMP}_${TMS}.v
+
+    ##### Verilog - end   #####  
+    if ( ( ( $l2i - 1 ) % $CMD ) == 0 ) then
+      ##### Verilog - begin #####
+      echo "  reg [$l2i-2:0] binIR[1:0]; reg [1:0] vldIR; reg [$PRW-1:0] proIR[1:0];"                                                   >> ${TMP}_${TMS}.v
+      echo "  always @(posedge clk, posedge rst)"                                                                                       >> ${TMP}_${TMS}.v
+       echo "    if (rst) {binIR[1],binIR[0],proIR[1],proIR[0],vldIR} <= {(2*($l2i+$PRW)){1'b0}};" >> ${TMP}_${TMS}.v
+      echo "    else     {binIR[1],binIR[0],proIR[1],proIR[0],vldIR} <= {binI[ 1],binI[ 0],proI[ 1],proI[ 0],vldI };"  >> ${TMP}_${TMS}.v
+      echo "  assign     {binII[1],binII[0],proII[1],proII[0],vldII} =  {binIR[1],binIR[0],proIR[1],proIR[0],vldIR};"  >> ${TMP}_${TMS}.v
+
+      ##### Verilog - end   #####
+    else
+      ##### Verilog - begin #####
+      echo "  assign {binII[1],binII[0],proII[1],proII[0],vldII} = {binI[1],binI[0],proI[1],proI[0],vldI};" >> ${TMP}_${TMS}.v
+      ##### Verilog - end   #####
+    endif
+    ##### Verilog - begin #####
+    echo "  // output lpm2 to generate indices from valid bits"                  >> ${TMP}_${TMS}.v
+    echo "  lpm2_${TMS} lpm2_${TMS}_out0(clk,rst,vldII,{proII[1],proII[0]},bin[$l2i-1:$l2i-1],pro,vld);" >> ${TMP}_${TMS}.v
+    echo "  assign bin[$l2i-2:0] = bin[$l2i-1:$l2i-1] ? binII[1] : binII[0];" >> ${TMP}_${TMS}.v
+    ##### Verilog - end   #####
+  endif
+  ##### Verilog - begin #####
+  echo "endmodule" >> ${TMP}_${TMS}.v
+  echo             >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+end
+
+# LPM encoder top module file
+
+##### Verilog - begin #####
+echo "// ${TMP}_${TMS}.v: LPM encoder top module file; Automatically generated"                        >> ${TMP}_${TMS}.v
+echo "module ${TMP}_${TMS}(input clk, input rst, input [$PEW-1:0] oht, input [$PRW*$PEW-1:0] prf,output [$l2w-1:0] bin, output vld);" >> ${TMP}_${TMS}.v
+##### Verilog - end   #####
+
+if ($RI == "1") then
+  ##### Verilog - begin #####
+  echo "  // register inputs"                            >> ${TMP}_${TMS}.v
+  echo "  reg [$PEW-1:0] ohtR; reg [$PRW*$PEW-1:0] prfR;" >> ${TMP}_${TMS}.v
+  echo "  always @(posedge clk, posedge rst)"            >> ${TMP}_${TMS}.v
+  echo "    if (rst) {ohtR,prfR} <= {($PEW+$PRW*$PEW){1'b0}};" >> ${TMP}_${TMS}.v
+  echo "    else     {ohtR,prfR} <= {oht,prf}               ;" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+else
+  ##### Verilog - begin #####
+  echo "  wire [$PEW-1:0] ohtR = oht; wire [$PRW*$PEW-1:0] prfR = prf;" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+endif
+
+##### Verilog - begin #####
+echo "  wire [$l2w-1:0] binII; wire vldI;"          >> ${TMP}_${TMS}.v
+echo "  // instantiate peiority encoder" >> ${TMP}_${TMS}.v
+##### Verilog - end   #####
+
+if ($i > $PEW) then
+  ##### Verilog - begin #####
+  echo "  wire [$i-1:0] ohtI = {{($i-$PEW){1'b0}},ohtR};"           >> ${TMP}_${TMS}.v
+  echo "  wire [$i*$PRW-1:0] prfI = {{(($i-$PEW)*$PRW){1'b0}},prfR};"           >> ${TMP}_${TMS}.v
+  echo "  wire [$l2i-1:0] binI ;"                                   >> ${TMP}_${TMS}.v
+  echo "  lpm${i}_${TMS} lpm${i}_${TMS}_0(clk,rst,ohtI,prfI,binI,,vldI);" >> ${TMP}_${TMS}.v
+  echo "  assign binII = binI[$l2w-1:0];"                           >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+else
+  ##### Verilog - begin #####
+  echo "  lpm${i}_${TMS} lpm${i}_${TMS}_0(clk,rst,ohtR,prfR,binII,,vldI);" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+endif
+
+if ($RO == "1") then
+  ##### Verilog - begin #####
+  echo "  // register outputs (bin, vld)"                 >> ${TMP}_${TMS}.v
+  echo "  reg [$l2w-1:0] binIIR; reg vldIR;"                         >> ${TMP}_${TMS}.v
+  echo "  always @(posedge clk, posedge rst)"             >> ${TMP}_${TMS}.v
+  echo "    if (rst) {binIIR,vldIR} <= {($l2w+1){1'b0}};" >> ${TMP}_${TMS}.v
+  echo "    else     {binIIR,vldIR} <= {binII,vldI};"     >> ${TMP}_${TMS}.v
+  echo "  assign {bin,vld} = {binIIR,vldIR};"             >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+else
+  ##### Verilog - begin #####
+  echo "  assign {bin,vld} = {binII ,vldI };" >> ${TMP}_${TMS}.v
+  ##### Verilog - end   #####
+endif
+
+##### Verilog - begin #####
+echo "endmodule" >> ${TMP}_${TMS}.v
+##### Verilog - end   #####
+
+goto scriptEnd
+
+################################## ERROR MESSAGE ####################################
+
+errorMessage:
+printf '\x1b[%i;3%im' 1 1
+cat << EOH
+USAGE:
+./lpm <top module suffex> <encoder width> <prefix width>  \
+  [-cmd='combinatorial max depth'] [-ri] [-ro]
+- arguments surrounded by angle brackets '<>' are mandatory, while  arguments
+  surrouned by square brackets are optional.
+- Mandatory arguments:
+  * Top module name and file will be "lpm_<top module suffex>"
+  * Encoder width is a positive integer
+  * Prefix width is a positive integer
+- Optional arguments:
+  * -ri : Register inputs  for pipelining
+  * -ro : Register outputs for pipelining
+  * -cmd: Combinatorial maximum depth; default is infinite,
+         acheived by internal pipelining
+EXAMPLES:
+./lpm out 1024 5 -cmd=2 -ri -ro
+    - generates Verilog for a 1K longest-prefix-match encoder with 5-bit prefix
+    - Registered inputs and outputs; maximum two stages deep logic
+    - Top level name will be lpm_out and will be located in lpm_out.v
+The following files and directories will be created:
+- lpm_<top module suffex>.v:  Longest-Prefix-Macth (LPM) top module file
+EOH
+printf '\x1b[0m'
+scriptEnd:
