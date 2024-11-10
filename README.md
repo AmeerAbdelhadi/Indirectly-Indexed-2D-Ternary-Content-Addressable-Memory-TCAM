@@ -11,9 +11,9 @@ A fully parameterized and generic Verilog implementation of the suggested modula
 **LICENSE:** BSD 3-Clause ("BSD New" or "BSD Simplified") license.
 
 Please refer to the full paper for more information:
-
-**A. M.S. Abdelhadi and G. G.F. Lemieux,
-"Modular SRAM-based Binary Content-Addressable Memories," in Proceedings of the 2015 IEEE International Symposium on Field-Programmable Custom Computing Machines (FCCM '15), May 2015.**
-* **DOI:** http://dx.doi.org/10.1109/FCCM.2015.69
-* **Paper:** https://www.ece.mcmaster.ca/~ameer/publications/Abdelhadi-Conference-2015May-FCCM2015-ModularBCAMs.pdf
-* **Talk:** https://www.ece.mcmaster.ca/~ameer/publications/Abdelhadi-Talk-2015May-FCCM2015-ModularBCAMs.pdf
+**A. M.S. Abdelhadi, G. G.F. Lemieux, and L. Shannon,
+"Modular Block-RAM-Based Longest-Prefix Match Ternary Content-Addressable Memories,"
+in Proceedings of the 2018 International Conference on Field-Programmable Logic and Applications (FPL '18), August 2018.**
+* **DOI:** https://doi.org/10.1109/FPL.2018.00049
+* **Paper:** https://www.ece.mcmaster.ca/~ameer/publications/Abdelhadi-Conference-2018Aug-FPL2018-LPM-TCAMs.pdf
+* **Talk:** https://www.ece.mcmaster.ca/~ameer/publications/Abdelhadi-Talk-2018Aug-FPL2018-LPM-TCAMs.pdf
